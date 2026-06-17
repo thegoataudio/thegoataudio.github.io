@@ -553,6 +553,8 @@
   .bwp-goat-send { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; background:#FFF7DD; border:0.5px solid #FFD369; border-radius:14px; padding:14px 18px; margin-bottom:24px; }
   .bwp-goat-send-text { font-size:13px; color:#7A5A15; flex:1; min-width:200px; line-height:1.5; }
   .bwp-goat-send-text strong { color:#2B1B3D; }
+  .bwp-viewport-bar { display: none !important; }
+  .bwp-role-toggle { display: none !important; }
 </style>
 </head>
 <body>
@@ -791,7 +793,7 @@
   // Demo staff users. In production this comes from your Supabase users table.
   // The email -> role lookup is what makes "one sign-in form" route to DJ vs Admin views.
   const STAFF_USERS = [
-    { email: 'admin@example.com', role: 'admin', name: 'Brandon (Admin)' },
+    { email: 'brandon@thegoataudio.com', role: 'admin', name: 'Brandon (Admin)' },
     { email: 'marcus@example.com', role: 'dj', name: 'DJ Marcus Vega' },
     { email: 'noor@example.com', role: 'dj', name: 'DJ Noor Hassan' },
     { email: 'riley@example.com', role: 'dj', name: 'DJ Riley Kim' },
@@ -800,7 +802,7 @@
   const state = {
     role: 'couple', view: 'dashboard', section: null, toast: null, popup: null, highlightMoment: null, adminTab: 'reminders', adminEventsFilter: 'active', adminAddingEvent: false, adminNewEvent: { couple:'', date:'', dj:'Unassigned', venueId:'', eventType:'wedding' },
     coupleAuthed: false, // Couples sign in with their own access code. Set true only for a quick local demo.
-    staffAuthed: true, // Same idea — flip to false to see the staff sign-in.
+    staffAuthed: false, // Staff (DJ/Admin) must sign in. No public access to client data.
     loginMode: 'token', // 'magic' or 'token'
     loginEmail: '', loginToken: '',
     staffLoginEmail: '',
@@ -1485,7 +1487,7 @@
           '<label>Work email</label>'+
           '<input type="email" id="bwp-staff-email" placeholder="you@yourcompany.com" value="'+escapeHtml(state.staffLoginEmail||'')+'" autocomplete="email" style="padding:13px 14px;border:1px solid rgba(43,27,61,0.2);border-radius:10px;background:#ffffff;color:#2B1B3D;width:100%;outline:none;font-family:inherit;font-size:14px;" />'+
           '<button class="bwp-btn-primary" id="bwp-staff-go" style="width:100%;margin-top:12px;padding:13px;">Send magic link</button>'+
-          '<div class="bwp-signin-hint">For DJs and admins. Demo: try <code>admin@example.com</code> or <code>marcus@example.com</code>.</div>'+
+          '<div class="bwp-signin-hint">For DJs and admins. Admin: <code>brandon@thegoataudio.com</code>.</div>'+
         '</div>'+
         '<div class="bwp-signin-altlink">Are you a couple? <button class="bwp-link-btn" id="bwp-flip-to-couple">Open your planner instead</button></div>'+
       '</div>'+
