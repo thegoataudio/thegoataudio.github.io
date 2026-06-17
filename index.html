@@ -667,12 +667,21 @@
   function getVendorTypes(){ return isCorporate() ? VENDOR_TYPES_CORPORATE : VENDOR_TYPES_WEDDING; }
   function clientDisplayName(){
     const e = currentEvent();
-    if(isCorporate()) return (e && e.couple) || state.company.name;
+    if(e && e.couple) return e.couple;
+    if(isCorporate()) return state.company.name;
     return state.wedding.partnerA + ' & ' + state.wedding.partnerB;
   }
   function sectionDisplayName(key){
     if(key === 'party') return cfg().partyLabel;
     return state.sections[key].name;
+  }
+  function heroNameHtml(){
+    const n = clientDisplayName();
+    if(!isCorporate() && n.indexOf(' & ') > -1){
+      const parts = n.split(' & ');
+      return escapeHtml(parts[0]) + '<span class="amp">&</span>' + escapeHtml(parts.slice(1).join(' & '));
+    }
+    return escapeHtml(n);
   }
   const DEFAULT_GENRES = ['Top 40 / Pop','Hip-Hop / Rap','R&B / Soul','Latin','Reggaeton','Afrobeats','Country','Rock','Indie / Alt','Disco / Funk','House / EDM','Throwback 80s/90s','Jazz / Standards','Acoustic','Mashups'];
   const VENDOR_TYPES_WEDDING = [
@@ -790,7 +799,7 @@
 
   const state = {
     role: 'couple', view: 'dashboard', section: null, toast: null, popup: null, highlightMoment: null, adminTab: 'reminders', adminEventsFilter: 'active', adminAddingEvent: false, adminNewEvent: { couple:'', date:'', dj:'Unassigned', venueId:'', eventType:'wedding' },
-    coupleAuthed: true, // Demo: pre-authed so the prototype is usable. Flip to false to see the sign-in gate.
+    coupleAuthed: false, // Couples sign in with their own access code. Set true only for a quick local demo.
     staffAuthed: true, // Same idea — flip to false to see the staff sign-in.
     loginMode: 'token', // 'magic' or 'token'
     loginEmail: '', loginToken: '',
@@ -1225,11 +1234,67 @@
       localStorage.setItem(storageKey(), JSON.stringify(snap));
     } catch(e){ /* storage off or full: phone-save just no-ops */ }
   }
+  const SEEDED_EVENT_IDS = ['sofia-marcus','vantage-gala'];
+  function cleanWeddingTimeline(){
+    return [
+      { id: 'arrival', mins: parseTime('3:00 PM'), title: 'DJ Arrival', sub: 'Load-in and sound check' },
+      { id: 'guestArrival', mins: parseTime('5:30 PM'), title: 'Guests Arrival', sub: '' },
+      { id: 'ceremony', mins: parseTime('6:00 PM'), title: 'Ceremony', sub: '' },
+      { id: 'cocktail', mins: parseTime('6:30 PM'), title: 'Cocktail Hour', sub: '' },
+      { id: 'grandEntrance', mins: parseTime('7:30 PM'), title: 'Grand Entrance', sub: '' },
+      { id: 'firstDance', mins: parseTime('7:45 PM'), title: 'First Dance', sub: '' },
+      { id: 'welcome', mins: parseTime('8:00 PM'), title: 'Welcome Speech', sub: '' },
+      { id: 'dinner', mins: parseTime('8:15 PM'), title: 'Dinner', sub: '' },
+      { id: 'toasts', mins: parseTime('9:15 PM'), title: 'Toasts', sub: '' },
+      { id: 'familyDances', mins: parseTime('9:25 PM'), title: 'Family Dances', sub: '' },
+      { id: 'openFloor', mins: parseTime('9:40 PM'), title: 'Open Dance Floor', sub: '' },
+      { id: 'cakeCutting', mins: parseTime('10:30 PM'), title: 'Cake Cutting', sub: '' },
+      { id: 'lastDance', mins: parseTime('11:15 PM'), title: 'Last Dance', sub: '' },
+      { id: 'end', mins: parseTime('11:30 PM'), title: 'Reception End', sub: 'Load-out' },
+    ];
+  }
+  function cleanCorporateTimeline(){
+    return [
+      { id: 'setup', mins: parseTime('3:00 PM'), title: 'Setup', sub: 'Load-in and sound check' },
+      { id: 'guestArrival', mins: parseTime('5:30 PM'), title: 'Guest Arrival', sub: '' },
+      { id: 'welcomeRemarks', mins: parseTime('6:00 PM'), title: 'Welcome Remarks', sub: '' },
+      { id: 'cocktail', mins: parseTime('6:20 PM'), title: 'Cocktail Hour', sub: '' },
+      { id: 'dinner', mins: parseTime('7:00 PM'), title: 'Dinner', sub: '' },
+      { id: 'speeches', mins: parseTime('8:00 PM'), title: 'Speeches', sub: '' },
+      { id: 'awards', mins: parseTime('8:30 PM'), title: 'Awards / Program', sub: '' },
+      { id: 'openFloor', mins: parseTime('9:15 PM'), title: 'Open Floor', sub: '' },
+      { id: 'closing', mins: parseTime('10:45 PM'), title: 'Closing Remarks', sub: '' },
+      { id: 'wrap', mins: parseTime('11:30 PM'), title: 'Wrap', sub: 'Load-out' },
+    ];
+  }
+  // Reset the planner to a clean slate for a couple/client who isn't the built-in demo.
+  function blankPlanner(){
+    const ev = currentEvent() || {};
+    state.general = { partnerAFull:'', partnerBFull:'', weddingDate: ev.date || '', guestCount:'', venueName:'', venueAddress:'', ceremonyTime:'', endTime:'', dayOfContact:'' };
+    state.party = [ {role:'',name:'',pronouns:'',phonetic:''},{role:'',name:'',pronouns:'',phonetic:''},{role:'',name:'',pronouns:'',phonetic:''},{role:'',name:'',pronouns:'',phonetic:''} ];
+    state.partyBank = [];
+    state.customMoments = [];
+    Object.keys(state.keyMoments).forEach(function(k){ state.keyMoments[k] = { song:'', artist:'', skip:false, notes:'', danceWith:'' }; });
+    state.music = { cleanPref:'clean', mustPlay:'', doNotPlay:'', mustPlayUrl:'', doNotPlayUrl:'', acceptRequests:'yes', djCanFreestyle:'yes', genres:{}, customGenres:[], lineDancesOn:true, seatingMusic:{text:'',url:''}, cocktailMusic:{text:'',url:''}, dinnerMusic:{text:'',url:''}, danceMusic:{text:'',url:''} };
+    state.lineDances = state.lineDances.map(function(d){ return { name: d.name, state: null }; });
+    state.vendors = {};
+    ['photographer','videographer','caterer','florals','hairmakeup','bakery','coordinator','officiant','venue','rentals','transport','attireBride','attireGroom','jewelry','contentCreator'].forEach(function(k){ state.vendors[k] = { business:'', handle:'' }; });
+    state.timelines = { wedding: cleanWeddingTimeline(), corporate: cleanCorporateTimeline() };
+    state.timelineBanks = { wedding: [], corporate: [] };
+    Object.keys(state.sections).forEach(function(k){ state.sections[k].userComplete = false; });
+    state.floorPlan = { uploaded:false, name:'', size:'' };
+    if((ev.couple||'').indexOf(' & ') > -1){ const p = ev.couple.split(' & '); state.wedding.partnerA = p[0]; state.wedding.partnerB = p.slice(1).join(' & '); }
+    else if(ev.couple){ state.wedding.partnerA = ev.couple; state.wedding.partnerB = ''; }
+    state.wedding.date = ev.date || state.wedding.date;
+  }
   function loadState(){
     try {
       if(typeof localStorage === 'undefined') return;
       const raw = localStorage.getItem(storageKey());
-      if(!raw) return;
+      if(!raw){
+        if(SEEDED_EVENT_IDS.indexOf(state.activeDjEventId) === -1) blankPlanner();
+        return;
+      }
       const snap = JSON.parse(raw);
       PERSIST_KEYS.forEach(k => { if(snap[k] !== undefined) state[k] = snap[k]; });
     } catch(e){ /* ignore a corrupt save */ }
@@ -1376,7 +1441,7 @@
     overlay.innerHTML =
       '<button class="bwp-welcome-skip" id="bwp-welcome-skip">Skip</button>'+
       '<div class="bwp-welcome-eyebrow">'+cfg().welcomeEyebrow+'</div>'+
-      '<h1 class="bwp-welcome-name">'+(isCorporate()?escapeHtml(clientDisplayName()):escapeHtml(a)+'<span class="amp">&</span>'+escapeHtml(b))+'</h1>'+
+      '<h1 class="bwp-welcome-name">'+heroNameHtml()+'</h1>'+
       '<svg class="bwp-welcome-seal" viewBox="0 0 88 88" fill="none" aria-hidden="true">'+
         '<circle cx="44" cy="44" r="38" stroke="#F26A5A" stroke-width="1.2"/>'+
         '<circle cx="44" cy="44" r="30" stroke="#F26A5A" stroke-width="0.6" stroke-dasharray="2 3"/>'+
@@ -1544,7 +1609,7 @@
   function renderCoupleDashboard(){
     const pct = overallPct();
     const days = daysUntilWedding();
-    let html = toastHtml() + '<div class="bwp-hero"><div class="bwp-hero-left"><div class="bwp-eyebrow">'+cfg().heroEyebrow+'</div><h1>'+(isCorporate()?escapeHtml(clientDisplayName()):escapeHtml(state.wedding.partnerA)+'<span class="amp">&</span>'+escapeHtml(state.wedding.partnerB))+'</h1><div class="bwp-hero-sub">'+escapeHtml(state.wedding.date)+' \u00b7 '+escapeHtml(state.vendors.venue.business)+'</div><button class="bwp-signout" id="bwp-signout">Sign out</button></div><div class="bwp-countdown"><div class="bwp-countdown-num">'+days+'</div><div class="bwp-countdown-lbl">Days to go</div></div></div>';
+    let html = toastHtml() + '<div class="bwp-hero"><div class="bwp-hero-left"><div class="bwp-eyebrow">'+cfg().heroEyebrow+'</div><h1>'+heroNameHtml()+'</h1><div class="bwp-hero-sub">'+escapeHtml(state.wedding.date)+' \u00b7 '+escapeHtml(state.vendors.venue.business)+'</div><button class="bwp-signout" id="bwp-signout">Sign out</button></div><div class="bwp-countdown"><div class="bwp-countdown-num">'+days+'</div><div class="bwp-countdown-lbl">Days to go</div></div></div>';
     html += '<div class="bwp-progress-card"><div class="bwp-progress-top"><div class="bwp-progress-label">You\'re '+pct+'% of the way there</div><div class="bwp-progress-pct">'+pct+'%</div></div><div class="bwp-progress-track"><div class="bwp-progress-fill" style="width:'+pct+'%"></div></div><div class="bwp-banner"><span>\u2600</span><div>Sections climb to 99% as you fill them in. Hit Mark Complete to lock in 100%.</div></div></div>';
     html += '<div class="bwp-goat-send"><div class="bwp-goat-send-text"><strong>Done for now?</strong> Your answers save on this device automatically. Send a copy to your DJ whenever you want.</div><button class="bwp-btn-coral" id="bwp-send-dj">Send to my DJ</button></div>';
     html += '<div class="bwp-sec-grid">';
