@@ -1284,13 +1284,62 @@
   const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbygdaMJZaLh9dg8XpyF6bWiZs_Zl6EIVzKajYTRHmXYJYYxwVdZr3oie995c4EM4WxK/exec';
   const PERSIST_KEYS = ['general','party','partyBank','keyMoments','customMoments','music','lineDances','timelines','timelineBanks','vendors','sections','floorPlan','wedding'];
   function storageKey(){ return 'goat_planner_v1_' + (state.activeDjEventId || 'default'); }
+  function collectSnapshot(){
+    const snap = {};
+    PERSIST_KEYS.forEach(k => { if(state[k] !== undefined) snap[k] = state[k]; });
+    snap.__updatedAt = Date.now();
+    return snap;
+  }
   function saveState(){
     try {
       if(typeof localStorage === 'undefined') return;
-      const snap = {};
-      PERSIST_KEYS.forEach(k => { if(state[k] !== undefined) snap[k] = state[k]; });
+      const snap = collectSnapshot();
+      state.__localUpdatedAt = snap.__updatedAt;
       localStorage.setItem(storageKey(), JSON.stringify(snap));
     } catch(e){ /* storage off or full: phone-save just no-ops */ }
+  }
+  // ---- Cloud sync: shared planner across devices, keyed by access code ----
+  function cloudSave(){
+    if(!SHEET_WEBHOOK_URL) return;
+    const ev = currentEvent(); if(!ev || !ev.accessToken) return;
+    try {
+      fetch(SHEET_WEBHOOK_URL, { method:'POST', mode:'no-cors', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify({ action:'save', code: ev.accessToken, eventId: state.activeDjEventId, updatedAt: new Date().toISOString(), data: collectSnapshot() }) });
+    } catch(e){}
+  }
+  function cloudSetLock(ev){
+    if(!SHEET_WEBHOOK_URL || !ev || !ev.accessToken) return;
+    try {
+      fetch(SHEET_WEBHOOK_URL, { method:'POST', mode:'no-cors', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify({ action:'setLock', code: ev.accessToken, staffUnlocked: !!ev.staffUnlocked }) });
+    } catch(e){}
+  }
+  function cloudLoad(code, cb){
+    if(!SHEET_WEBHOOK_URL || !code || typeof document === 'undefined'){ cb(null); return; }
+    const cbName = '__goatCb_' + Math.random().toString(36).slice(2);
+    let done = false;
+    const cleanup = ()=>{ try{ delete window[cbName]; }catch(e){} const sc = document.getElementById(cbName); if(sc) sc.remove(); };
+    window[cbName] = (resp)=>{ if(done) return; done = true; cleanup(); cb(resp); };
+    const sc = document.createElement('script');
+    sc.id = cbName;
+    sc.src = SHEET_WEBHOOK_URL + '?action=load&code=' + encodeURIComponent(code) + '&callback=' + cbName + '&t=' + Date.now();
+    sc.onerror = ()=>{ if(done) return; done = true; cleanup(); cb(null); };
+    document.body.appendChild(sc);
+    setTimeout(()=>{ if(!done){ done = true; cleanup(); cb(null); } }, 8000);
+  }
+  function syncFromCloud(){
+    const ev = currentEvent(); if(!ev || !ev.accessToken) return;
+    const localUpd = state.__localUpdatedAt || 0;
+    cloudLoad(ev.accessToken, (resp)=>{
+      if(!resp || !resp.ok || !resp.found) return;
+      const e2 = currentEvent();
+      if(e2 && typeof resp.staffUnlocked !== 'undefined') e2.staffUnlocked = resp.staffUnlocked;
+      const cloudUpd = resp.updatedAt ? Date.parse(resp.updatedAt) : 0;
+      if(resp.data && cloudUpd >= localUpd){
+        PERSIST_KEYS.forEach(k => { if(resp.data[k] !== undefined) state[k] = resp.data[k]; });
+        state.__localUpdatedAt = resp.data.__updatedAt || cloudUpd;
+        saveState();
+      }
+      render();
+    });
   }
   const SEEDED_EVENT_IDS = ['sofia-marcus','vantage-gala'];
   function cleanWeddingTimeline(){
@@ -1355,10 +1404,11 @@
       }
       const snap = JSON.parse(raw);
       PERSIST_KEYS.forEach(k => { if(snap[k] !== undefined) state[k] = snap[k]; });
+      state.__localUpdatedAt = snap.__updatedAt || 0;
     } catch(e){ /* ignore a corrupt save */ }
   }
   let _saveTimer = null;
-  function scheduleSave(){ if(_saveTimer) clearTimeout(_saveTimer); _saveTimer = setTimeout(saveState, 400); }
+  function scheduleSave(){ if(_saveTimer) clearTimeout(_saveTimer); _saveTimer = setTimeout(()=>{ saveState(); cloudSave(); }, 600); }
   function buildSubmission(){
     const ev = currentEvent() || {};
     const moments = getKeyMoments().concat(state.customMoments.map(m=>({ key: m.key, label: m.label }))).map(m=>{
@@ -1643,6 +1693,7 @@
         match.linkedDevices = (match.linkedDevices || 0) + 1;
         state.activeDjEventId = match.id;
         loadState();
+        syncFromCloud();
         state.coupleAuthed = true;
         state.loginToken = '';
         // First-time vs returning
@@ -1657,6 +1708,7 @@
         state.coupleAuthed = true;
         state.loginEmail = '';
         loadState();
+        syncFromCloud();
         state.showWelcomeKind = (ev && ev.hasSeenWelcome) ? 'returning' : 'first';
         if(state.showWelcomeKind === 'returning') state.showReturningBanner = true;
         render();
@@ -2692,6 +2744,7 @@
         const ev = state.eventAssignments.find(e => e.id === b.dataset.eventUnlock);
         if(!ev) return;
         ev.staffUnlocked = !ev.staffUnlocked;
+        cloudSetLock(ev);
         showToast(ev.couple + (ev.staffUnlocked ? ' planner unlocked. The couple can edit again.' : ' planner re-locked.'));
         render();
       });
