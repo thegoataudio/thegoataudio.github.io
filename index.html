@@ -592,6 +592,8 @@
     .bwp-section-foot { flex-direction: column; align-items: stretch; }
     .bwp-staff-bar { gap: 10px; }
   }
+  .bwp-lock-chip { display:inline-flex; align-items:center; gap:6px; background:#FDE5E1; color:#C94A3A; padding:8px 14px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .bwp-lock-banner { display:flex; gap:10px; align-items:center; background:#FDE5E1; border:0.5px solid #F3B6AC; color:#9A3B2D; border-radius:14px; padding:14px 18px; margin-bottom:18px; font-size:13px; line-height:1.5; font-weight:500; }
 </style>
 </head>
 <body>
@@ -713,6 +715,22 @@
   function sectionDisplayName(key){
     if(key === 'party') return cfg().partyLabel;
     return state.sections[key].name;
+  }
+  // The planner locks for couples 7 days before the event. DJ/Admin can override per event.
+  function eventWithin7Days(){
+    const ev = currentEvent();
+    if(!ev) return false;
+    const wed = new Date(ev.weddingDateISO);
+    if(isNaN(wed.getTime())) return false;
+    const now = new Date(); now.setHours(0,0,0,0); wed.setHours(0,0,0,0);
+    const days = Math.round((wed - now) / (1000*60*60*24));
+    return days <= 7;
+  }
+  function plannerLockedForCouple(){
+    if(state.role !== 'couple') return false;
+    const ev = currentEvent();
+    if(ev && ev.staffUnlocked) return false;
+    return eventWithin7Days();
   }
   function heroNameHtml(){
     const n = clientDisplayName();
@@ -1005,6 +1023,7 @@
       { id: 'gabe-leila', orgId: CURRENT_ORG_ID, eventType: 'wedding', couple: 'Gabe & Leila', venue: 'Calamigos Ranch \u00b7 Malibu', venueId: null, date: 'Apr 14', weddingDateISO: new Date(Date.now() - 12*24*60*60*1000).toISOString(), dj: 'DJ Marcus Vega', accessToken: 'GBL5RC', tokenCreatedAt: new Date(Date.now() - 220*24*60*60*1000).toISOString(), linkedDevices: 2, hasSeenWelcome: true, status: 'past', canceledReason: '', canceledAt: null, archivedAt: null },
       // Demo: a wedding past the 30-day archive grace window (45 days ago)
       { id: 'noor-jay', orgId: CURRENT_ORG_ID, eventType: 'wedding', couple: 'Noor & Jay', venue: 'The Beverly Hills Hotel', venueId: null, date: 'Mar 12', weddingDateISO: new Date(Date.now() - 45*24*60*60*1000).toISOString(), dj: 'DJ Sasha Patel', accessToken: 'NRJ2QQ', tokenCreatedAt: new Date(Date.now() - 280*24*60*60*1000).toISOString(), linkedDevices: 0, hasSeenWelcome: true, status: 'archived', canceledReason: '', canceledAt: null, archivedAt: new Date(Date.now() - 14*24*60*60*1000).toISOString() },
+      { id: 'tara-sam', orgId: CURRENT_ORG_ID, eventType: 'wedding', couple: 'Tara & Sam', venue: 'The Bel Air Estate \u00b7 LA', venueId: 'v1', date: 'in 4 days', weddingDateISO: new Date(Date.now() + 4*24*60*60*1000).toISOString(), dj: 'DJ Marcus Vega', accessToken: 'SOON24', tokenCreatedAt: new Date(Date.now() - 30*24*60*60*1000).toISOString(), linkedDevices: 0, hasSeenWelcome: true, status: 'active', canceledReason: '', canceledAt: null, archivedAt: null, staffUnlocked: false },
       // Demo: a canceled event
       { id: 'mae-tony', orgId: CURRENT_ORG_ID, eventType: 'wedding', couple: 'Mae & Tony', venue: 'TBD', venueId: null, date: 'Jul 6', weddingDateISO: new Date(Date.now() + 75*24*60*60*1000).toISOString(), dj: 'Unassigned', accessToken: 'MTN9PP', tokenCreatedAt: new Date(Date.now() - 60*24*60*60*1000).toISOString(), linkedDevices: 1, hasSeenWelcome: true, status: 'canceled', canceledReason: 'Couple postponed indefinitely. Refund processed.', canceledAt: new Date(Date.now() - 8*24*60*60*1000).toISOString(), archivedAt: null },
       { id: 'vantage-gala', orgId: CURRENT_ORG_ID, eventType: 'corporate', couple: 'Vantage Capital Gala', venue: 'The Bel Air Estate \u00b7 LA', venueId: 'v1', date: 'Dec 12', weddingDateISO: new Date(Date.now() + 70*24*60*60*1000).toISOString(), dj: 'DJ Riley Kim', accessToken: 'GALA26', tokenCreatedAt: new Date(Date.now() - 5*24*60*60*1000).toISOString(), linkedDevices: 0, hasSeenWelcome: false, status: 'active', canceledReason: '', canceledAt: null, archivedAt: null },
@@ -1651,10 +1670,11 @@
     let html = toastHtml() + '<div class="bwp-hero"><div class="bwp-hero-left"><div class="bwp-eyebrow">'+cfg().heroEyebrow+'</div><h1>'+heroNameHtml()+'</h1><div class="bwp-hero-sub">'+escapeHtml(state.wedding.date)+' \u00b7 '+escapeHtml(state.vendors.venue.business)+'</div><button class="bwp-signout" id="bwp-signout">Sign out</button></div><div class="bwp-countdown"><div class="bwp-countdown-num">'+days+'</div><div class="bwp-countdown-lbl">Days to go</div></div></div>';
     html += '<div class="bwp-progress-card"><div class="bwp-progress-top"><div class="bwp-progress-label">You\'re '+pct+'% of the way there</div><div class="bwp-progress-pct">'+pct+'%</div></div><div class="bwp-progress-track"><div class="bwp-progress-fill" style="width:'+pct+'%"></div></div><div class="bwp-banner"><span>\u2600</span><div>Sections climb to 99% as you fill them in. Hit Mark Complete to lock in 100%.</div></div></div>';
     html += '<div class="bwp-goat-send"><div class="bwp-goat-send-text"><strong>Done for now?</strong> Your answers save on this device automatically. Send a copy to your DJ whenever you want.</div><button class="bwp-btn-coral" id="bwp-send-dj">Send to my DJ</button></div>';
+    if(plannerLockedForCouple()) html += '<div class="bwp-lock-banner">Your planner is locked because your event is within 7 days. Reach out to your DJ to make any changes.</div>';
     html += '<div class="bwp-sec-grid">';
     Object.entries(state.sections).forEach(([key, sec])=>{
       const p = sectionPct(key); const done = sec.userComplete;
-      html += '<div class="bwp-sec-card'+(done?' complete':'')+'"><div class="bwp-sec-pct">'+(done?'<span class="bwp-sec-badge">Done</span>':p+'%')+'</div><div class="bwp-sec-clickable" data-section="'+key+'" role="button" tabindex="0" aria-label="Open '+escapeHtml(sectionDisplayName(key))+' section"><div class="bwp-sec-title">'+escapeHtml(sectionDisplayName(key))+'</div><div class="bwp-sec-meta">'+(done?'Locked in':'Tap to continue')+'</div><div class="bwp-sec-track"><div class="bwp-sec-fill" style="width:'+p+'%"></div></div></div><div class="bwp-sec-actions">'+(done?'<button class="bwp-sec-mini-btn outlined" data-uncomplete="'+key+'">Reopen</button>':'<button class="bwp-sec-mini-btn" data-complete="'+key+'">Mark complete</button>')+'</div></div>';
+      html += '<div class="bwp-sec-card'+(done?' complete':'')+'"><div class="bwp-sec-pct">'+(done?'<span class="bwp-sec-badge">Done</span>':p+'%')+'</div><div class="bwp-sec-clickable" data-section="'+key+'" role="button" tabindex="0" aria-label="Open '+escapeHtml(sectionDisplayName(key))+' section"><div class="bwp-sec-title">'+escapeHtml(sectionDisplayName(key))+'</div><div class="bwp-sec-meta">'+(done?'Locked in':'Tap to continue')+'</div><div class="bwp-sec-track"><div class="bwp-sec-fill" style="width:'+p+'%"></div></div></div>'+(plannerLockedForCouple()?'':'<div class="bwp-sec-actions">'+(done?'<button class="bwp-sec-mini-btn outlined" data-uncomplete="'+key+'">Reopen</button>':'<button class="bwp-sec-mini-btn" data-complete="'+key+'">Mark complete</button>')+'</div>')+'</div>';
     });
     html += '</div>';
     root.innerHTML = html;
@@ -1690,13 +1710,24 @@
     else if(key === 'social'){ body = renderSocialEditor(); }
     else { body = '<div class="bwp-stub"><div class="bwp-stub-icon">v</div><div class="bwp-stub-title">'+sec.name+'</div><div class="bwp-stub-sub">Coming soon.</div></div>'; }
     const pct = sectionPct(key);
-    const headRight = sec.userComplete
-      ? '<button class="bwp-sec-mini-btn outlined" data-uncomplete-head="'+key+'">Reopen section</button>'
-      : '<button class="bwp-btn-mint" data-complete-head="'+key+'">Mark complete</button>';
-    const bodyWrapped = sec.userComplete
-      ? '<div class="bwp-locked-wrap">'+body+'<div class="bwp-locked-overlay" id="bwp-locked-overlay" role="button" tabindex="0" aria-label="Section locked. Tap to reopen."></div></div>'
+    const dateLocked = plannerLockedForCouple();
+    const locked = dateLocked || sec.userComplete;
+    const headRight = dateLocked
+      ? '<span class="bwp-lock-chip">Locked</span>'
+      : (sec.userComplete
+        ? '<button class="bwp-sec-mini-btn outlined" data-uncomplete-head="'+key+'">Reopen section</button>'
+        : '<button class="bwp-btn-mint" data-complete-head="'+key+'">Mark complete</button>');
+    const bodyWrapped = locked
+      ? '<div class="bwp-locked-wrap">'+body+'<div class="bwp-locked-overlay" id="bwp-locked-overlay" role="button" tabindex="0" aria-label="Section locked. Tap for details."></div></div>'
       : body;
-    root.innerHTML = '<button class="bwp-back" id="bwp-back"><span>\u2190</span> Back to planner</button>'+toastHtml()+'<div class="bwp-sec-head"><div class="bwp-sec-head-text"><h2>'+sectionDisplayName(key)+'</h2><p>'+(sec.userComplete?'Marked complete \u00b7 locked':pct+'% filled')+' \u00b7 Auto-saving as you go</p></div>'+headRight+'</div>'+bodyWrapped+sectionFootHtml(key);
+    let headSub;
+    if(dateLocked) headSub = 'Locked \u00b7 within 7 days of your event';
+    else if(sec.userComplete) headSub = 'Marked complete \u00b7 locked';
+    else headSub = pct+'% filled \u00b7 Auto-saving as you go';
+    const foot = dateLocked
+      ? '<div class="bwp-section-foot"><div class="bwp-section-foot-text"><strong>This planner is locked.</strong> It locks 7 days before your event so your DJ can finalize. Reach out to your DJ to make changes.</div></div>'
+      : sectionFootHtml(key);
+    root.innerHTML = '<button class="bwp-back" id="bwp-back"><span>\u2190</span> Back to planner</button>'+toastHtml()+'<div class="bwp-sec-head"><div class="bwp-sec-head-text"><h2>'+sectionDisplayName(key)+'</h2><p>'+headSub+'</p></div>'+headRight+'</div>'+bodyWrapped+foot;
     document.getElementById('bwp-back').addEventListener('click', ()=>{ state.view='dashboard'; render(); });
     wireToast();
     if(key === 'timeline') wireTimeline();
@@ -1709,19 +1740,27 @@
     });
     const lockedOverlay = document.getElementById('bwp-locked-overlay');
     if(lockedOverlay){
-      const askReopen = ()=>{
-        state.popup = {
-          title: 'This section is locked',
-          body: 'You marked '+sectionDisplayName(key)+' complete, so it is locked to prevent accidental changes. Reopen it to edit?',
-          actions: [
-            { label: 'Keep locked', kind: 'ghost', fn: ()=>{} },
-            { label: 'Reopen section', kind: 'mint', fn: ()=>{ state.sections[key].userComplete = false; state.nudgedFor99[key] = false; } },
-          ]
-        };
+      const showLockMsg = ()=>{
+        if(dateLocked){
+          state.popup = {
+            title: 'Planner locked',
+            body: 'Your planner locks 7 days before your event so your DJ can finalize the details. Reach out to your DJ to make any changes.',
+            actions: [ { label: 'Got it', kind: 'mint', fn: ()=>{} } ]
+          };
+        } else {
+          state.popup = {
+            title: 'This section is locked',
+            body: 'You marked '+sectionDisplayName(key)+' complete, so it is locked to prevent accidental changes. Reopen it to edit?',
+            actions: [
+              { label: 'Keep locked', kind: 'ghost', fn: ()=>{} },
+              { label: 'Reopen section', kind: 'mint', fn: ()=>{ state.sections[key].userComplete = false; state.nudgedFor99[key] = false; } },
+            ]
+          };
+        }
         render();
       };
-      lockedOverlay.addEventListener('click', askReopen);
-      lockedOverlay.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); askReopen(); } });
+      lockedOverlay.addEventListener('click', showLockMsg);
+      lockedOverlay.addEventListener('keydown', (e)=>{ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); showLockMsg(); } });
     }
     document.querySelectorAll('[data-uncomplete-foot], [data-uncomplete-head]').forEach(btn=>{
       btn.addEventListener('click', ()=>{ state.sections[key].userComplete = false; state.nudgedFor99[key] = false; render(); });
@@ -1743,7 +1782,7 @@
   }
   function wireGeneral(){
     document.querySelectorAll('[data-gen]').forEach(input=>{
-      input.addEventListener('input', ()=>{ state.general[input.dataset.gen] = input.value; checkNudgeFor99('general'); render(); });
+      input.addEventListener('input', ()=>{ state.general[input.dataset.gen] = input.value; checkNudgeFor99('general'); });
     });
     const u = document.getElementById('bwp-fp-upload');
     if(u){
@@ -1789,7 +1828,7 @@
       btn.addEventListener('click', ()=>{ const idx = parseInt(btn.dataset.partyRestore); const r = state.partyBank.splice(idx, 1)[0]; state.party.push(r); render(); });
     });
     document.querySelectorAll('[data-party-field]').forEach(input=>{
-      input.addEventListener('input', ()=>{ const idx = parseInt(input.dataset.partyIdx); const f = input.dataset.partyField; if(state.party[idx]) state.party[idx][f] = input.value; checkNudgeFor99('party'); render(); });
+      input.addEventListener('input', ()=>{ const idx = parseInt(input.dataset.partyIdx); const f = input.dataset.partyField; if(state.party[idx]) state.party[idx][f] = input.value; checkNudgeFor99('party'); });
     });
   }
 
@@ -1873,7 +1912,7 @@
         sortTimeline(); render();
       });
     });
-    document.querySelectorAll('[data-tl-title]').forEach(input=>{ input.addEventListener('input', ()=>{ state.timeline[parseInt(input.dataset.tlTitle)].title = input.value; checkNudgeFor99('timeline'); render(); }); });
+    document.querySelectorAll('[data-tl-title]').forEach(input=>{ input.addEventListener('input', ()=>{ state.timeline[parseInt(input.dataset.tlTitle)].title = input.value; checkNudgeFor99('timeline'); }); });
     document.querySelectorAll('[data-tl-sub]').forEach(input=>{ input.addEventListener('input', ()=>{ state.timeline[parseInt(input.dataset.tlSub)].sub = input.value; }); });
     document.querySelectorAll('[data-tl-remove]').forEach(btn=>{
       btn.addEventListener('click', (e)=>{ e.stopPropagation(); const idx = parseInt(btn.dataset.tlRemove); const removed = state.timeline.splice(idx, 1)[0]; state.timelineBank.unshift(removed); showToast('Removed '+removed.title, ()=>{ state.timelineBank.shift(); state.timeline.splice(idx, 0, removed); sortTimeline(); }); });
@@ -2527,6 +2566,7 @@
   function renderEventLifecycleActions(ev){
     let buttons = '';
     if(ev.status === 'active'){
+      buttons += '<button class="bwp-event-action" data-event-unlock="'+ev.id+'">'+(ev.staffUnlocked?'Re-lock planner':'Unlock planner for couple')+'</button>';
       buttons += '<button class="bwp-event-action" data-event-cancel="'+ev.id+'">Mark as canceled</button>';
     } else if(ev.status === 'past'){
       buttons += '<button class="bwp-event-action" data-event-archive="'+ev.id+'">Archive</button>';
@@ -2643,6 +2683,16 @@
           const lbl = (MILESTONE_STEPS.find(s => s.key === choice) || {}).label || '';
           showToast('Set '+ev.couple+' to: '+lbl, ()=>{ state.milestones[eventId] = prev; });
         }
+        render();
+      });
+    });
+    // Unlock / re-lock planner (DJ/Admin override of the 7-day lock)
+    document.querySelectorAll('[data-event-unlock]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const ev = state.eventAssignments.find(e => e.id === b.dataset.eventUnlock);
+        if(!ev) return;
+        ev.staffUnlocked = !ev.staffUnlocked;
+        showToast(ev.couple + (ev.staffUnlocked ? ' planner unlocked. The couple can edit again.' : ' planner re-locked.'));
         render();
       });
     });
